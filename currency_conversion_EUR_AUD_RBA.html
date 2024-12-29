@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>EUR to AUD Converter</title>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+        <style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                    Roboto, sans-serif;
+                max-width: 800px;
+                margin: 2rem auto;
+                padding: 0 1rem;
+                line-height: 1.5;
+            }
+            .container {
+                background: #f9f9f9;
+                padding: 2rem;
+                border-radius: 8px;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            }
+            .form-group {
+                margin-bottom: 1rem;
+            }
+            label {
+                display: block;
+                margin-bottom: 0.5rem;
+                font-weight: bold;
+            }
+            input[type="date"],
+            input[type="number"],
+            input[type="file"] {
+                width: 100%;
+                padding: 0.5rem;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                margin-bottom: 1rem;
+            }
+            button {
+                background: #0066cc;
+                color: white;
+                border: none;
+                padding: 0.75rem 1.5rem;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 1rem;
+            }
+            button:hover {
+                background: #0052a3;
+            }
+            button:disabled {
+                background: #cccccc;
+                cursor: not-allowed;
+            }
+            .result {
+                margin-top: 2rem;
+                padding: 1rem;
+                background: #e6f3ff;
+                border-radius: 4px;
+                display: none;
+            }
+            .error {
+                color: #cc0000;
+                margin-top: 1rem;
+                padding: 1rem;
+                background: #fff0f0;
+                border-radius: 4px;
+                display: none;
+            }
+            .download-section {
+                margin-bottom: 2rem;
+                padding: 1rem;
+                background: #f0f0f0;
+                border-radius: 4px;
+            }
+            .converter-section {
+                display: none;
+            }
+            .data-info {
+                margin-top: 1rem;
+                padding: 0.5rem;
+                background: #e8e8e8;
+                border-radius: 4px;
+                display: none;
+            }
+            .info {
+                font-size: 0.9rem;
+                color: #666;
+                margin-top: 0.5rem;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>EUR to AUD Currency Converter</h1>
+            <p>
+                Convert Euros to Australian Dollars using official RBA exchange
+                rates for ATO tax purposes.
+            </p>
+
+            <div class="download-section">
+                <h3>1. Get the Exchange Rate Data</h3>
+                <ol>
+                    <li>
+                        Download the exchange rates CSV from
+                        <a
+                            href="https://www.rba.gov.au/statistics/tables/csv/f11.1-data.csv"
+                            target="_blank"
+                            >RBA Website</a
+                        >
+                    </li>
+                    <li>Upload the downloaded file below</li>
+                </ol>
+                <input type="file" id="csvFile" accept=".csv" />
+                <div class="data-info" id="dataInfo">
+                    <strong>Loaded Data Range:</strong>
+                    <div id="dateRangeFull"></div>
+                    <div id="totalDays"></div>
+                </div>
+            </div>
+
+            <div class="converter-section" id="converterSection">
+                <h3>2. Convert EUR to AUD</h3>
+
+                <div class="form-group">
+                    <label for="date">Date:</label>
+                    <input type="date" id="date" required />
+                    <div class="info" id="dateRange"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="amount">Amount in EUR:</label>
+                    <input
+                        type="number"
+                        id="amount"
+                        step="0.01"
+                        min="0"
+                        required
+                        placeholder="Enter amount in EUR"
+                    />
+                </div>
+
+                <div class="button-group" style="margin-bottom: 1rem">
+                    <button onclick="convert()" id="convertBtn">
+                        Convert to AUD
+                    </button>
+                    <button
+                        onclick="clearForm()"
+                        id="clearBtn"
+                        style="background: #666"
+                    >
+                        Clear Form
+                    </button>
+                </div>
+
+                <div class="result" id="result"></div>
+                <div class="error" id="error"></div>
+
+                <div id="history" style="margin-top: 2rem; display: none">
+                    <h3>Recent Conversions</h3>
+                    <div
+                        id="historyList"
+                        style="max-height: 200px; overflow-y: auto"
+                    ></div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            let ratesData = {};
+            let minDate, maxDate;
+
+            // Handle file upload
+            document
+                .getElementById("csvFile")
+                .addEventListener("change", function (e) {
+                    const file = e.target.files[0];
+                    if (file) {
+                        Papa.parse(file, {
+                            complete: function (results) {
+                                processRBAData(results.data);
+                                document.getElementById(
+                                    "converterSection",
+                                ).style.display = "block";
+
+                                // Set the date input min/max
+                                const dateInput =
+                                    document.getElementById("date");
+                                dateInput.min = minDate;
+                                dateInput.max = maxDate;
+
+                                // Show available date range in both places
+                                document.getElementById(
+                                    "dateRange",
+                                ).textContent =
+                                    `Available dates: ${formatDate(minDate)} to ${formatDate(maxDate)}`;
+
+                                // Show detailed data info
+                                const dataInfo =
+                                    document.getElementById("dataInfo");
+                                const dateRangeFull =
+                                    document.getElementById("dateRangeFull");
+                                const totalDays =
+                                    document.getElementById("totalDays");
+
+                                dataInfo.style.display = "block";
+                                dateRangeFull.textContent = `From ${formatDate(minDate)} to ${formatDate(maxDate)}`;
+
+                                // Calculate total number of days
+                                const days = Object.keys(ratesData).length;
+                                totalDays.textContent = `Contains ${days} business days of exchange rates`;
+
+                                // Update file info with timestamp
+                                const timestamp = new Date(file.lastModified);
+                                const fileInfo = document.createElement("div");
+                                fileInfo.style.marginTop = "0.5rem";
+                                fileInfo.style.fontSize = "0.9em";
+                                fileInfo.style.color = "#666";
+                                fileInfo.textContent = `CSV file last modified: ${timestamp.toLocaleString()}`;
+                                dataInfo.appendChild(fileInfo);
+                            },
+                            error: function (error) {
+                                showError(
+                                    "Error parsing CSV file: " + error.message,
+                                );
+                            },
+                        });
+                    }
+                });
+
+            function processRBAData(data) {
+                // Reset data
+                ratesData = {};
+                minDate = null;
+                maxDate = null;
+
+                // Find the start of actual data and check for EUR column
+                let startIndex = 0;
+                let eurColumnIndex = 5; // Default EUR column index
+
+                // Find the header row and confirm EUR column index
+                for (let i = 0; i < data.length; i++) {
+                    const rowStr = data[i].join(",").toLowerCase();
+                    if (rowStr.includes("eur")) {
+                        // Found the currency header row
+                        eurColumnIndex = data[i].findIndex((cell) =>
+                            cell.toLowerCase().includes("eur"),
+                        );
+                        if (eurColumnIndex === -1) eurColumnIndex = 5; // Fallback to default if not found
+                    }
+                    if (
+                        data[i][0] &&
+                        data[i][0].match(/^\d{2}-[A-Za-z]{3}-\d{4}$/)
+                    ) {
+                        startIndex = i;
+                        break;
+                    }
+                }
+
+                // Process each row
+                for (let i = startIndex; i < data.length; i++) {
+                    const row = data[i];
+                    if (row[0] && row[5]) {
+                        // Check if date and EUR rate exist
+                        try {
+                            const dateParts = row[0].split("-");
+                            const monthMap = {
+                                Jan: "01",
+                                Feb: "02",
+                                Mar: "03",
+                                Apr: "04",
+                                May: "05",
+                                Jun: "06",
+                                Jul: "07",
+                                Aug: "08",
+                                Sep: "09",
+                                Oct: "10",
+                                Nov: "11",
+                                Dec: "12",
+                            };
+
+                            // Convert date format from DD-MMM-YYYY to YYYY-MM-DD
+                            const formattedDate = `${dateParts[2]}-${monthMap[dateParts[1]]}-${dateParts[0].padStart(2, "0")}`;
+                            const rate = parseFloat(row[5]);
+                            console.log(
+                                "Processing date:",
+                                formattedDate,
+                                "rate:",
+                                rate,
+                            );
+
+                            if (!isNaN(rate)) {
+                                ratesData[formattedDate] = rate;
+
+                                // Update min/max dates
+                                if (!minDate || formattedDate < minDate)
+                                    minDate = formattedDate;
+                                if (!maxDate || formattedDate > maxDate)
+                                    maxDate = formattedDate;
+                            }
+                        } catch (e) {
+                            console.error("Error processing row:", row, e);
+                        }
+                    }
+                }
+            }
+
+            // Store last used values
+            let lastUsedDate = "";
+            let lastUsedAmount = "";
+            let conversionHistory = [];
+
+            // Load last used values when date or amount fields are focused
+            document
+                .getElementById("date")
+                .addEventListener("focus", function () {
+                    if (lastUsedDate) {
+                        this.value = lastUsedDate;
+                    }
+                });
+
+            document
+                .getElementById("amount")
+                .addEventListener("focus", function () {
+                    if (lastUsedAmount) {
+                        this.value = lastUsedAmount;
+                    }
+                });
+
+            function clearForm() {
+                document.getElementById("date").value = "";
+                document.getElementById("amount").value = "";
+                document.getElementById("result").style.display = "none";
+            }
+
+            function addToHistory(date, amount, rate, audAmount) {
+                conversionHistory.unshift({
+                    date: date,
+                    amount: amount,
+                    rate: rate,
+                    audAmount: audAmount,
+                });
+
+                // Keep only last 5 conversions
+                conversionHistory = conversionHistory.slice(0, 5);
+
+                // Show history section
+                const historyDiv = document.getElementById("history");
+                const historyList = document.getElementById("historyList");
+                historyDiv.style.display = "block";
+
+                // Update history display
+                historyList.innerHTML = conversionHistory
+                    .map(
+                        (conv) => `
+                <div style="padding: 0.5rem; border-bottom: 1px solid #eee; cursor: pointer;"
+                     onclick="reuse('${conv.date}', ${conv.amount})">
+                    ${formatDate(conv.date)}: ${conv.amount.toFixed(2)} EUR = ${conv.audAmount.toFixed(2)} AUD
+                    <span style="color: #666; font-size: 0.9em;"> (Rate: ${conv.rate.toFixed(4)})</span>
+                </div>
+            `,
+                    )
+                    .join("");
+            }
+
+            function reuse(date, amount) {
+                document.getElementById("date").value = date;
+                document.getElementById("amount").value = amount;
+                convert();
+            }
+
+            function convert() {
+                const date = document.getElementById("date").value;
+                const amount = parseFloat(
+                    document.getElementById("amount").value,
+                );
+                const result = document.getElementById("result");
+                const error = document.getElementById("error");
+
+                error.style.display = "none";
+                result.style.display = "none";
+
+                // Store last used values
+                lastUsedDate = date;
+                lastUsedAmount = amount;
+
+                if (!date || !amount) {
+                    showError("Please enter both date and amount.");
+                    return;
+                }
+
+                console.log("Looking for rate on date:", date);
+                console.log("Available dates:", Object.keys(ratesData));
+                if (!ratesData[date]) {
+                    showError(
+                        "No exchange rate available for the selected date. Please choose another date.",
+                    );
+                    return;
+                }
+
+                const rate = ratesData[date];
+                const audAmount = amount / rate;
+
+                // Add to history before showing result
+                addToHistory(date, amount, rate, audAmount);
+
+                result.innerHTML = `
+                <div style="border-left: 4px solid #0066cc; padding-left: 1rem;">
+                    <h3 style="margin-top: 0;">Conversion Result</h3>
+                    <p><strong>Date:</strong> ${formatDate(date)}</p>
+                    <p><strong>Exchange Rate:</strong> 1 AUD = ${rate.toFixed(4)} EUR</p>
+                    <p><strong>Amount:</strong> ${amount.toFixed(2)} EUR = ${audAmount.toFixed(2)} AUD</p>
+                    <p><small>Source: Reserve Bank of Australia (RBA)</small></p>
+                </div>
+            `;
+                result.style.display = "block";
+
+                // Focus the date input for the next conversion
+                document.getElementById("date").focus();
+            }
+
+            function formatDate(dateStr) {
+                const date = new Date(dateStr);
+                return date.toLocaleDateString("en-AU", {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                });
+            }
+
+            function showError(message) {
+                const error = document.getElementById("error");
+                error.textContent = message;
+                error.style.display = "block";
+            }
+        </script>
+    </body>
+</html>
